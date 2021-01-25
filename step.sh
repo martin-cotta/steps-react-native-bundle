@@ -47,106 +47,95 @@ function echo_done {
 }
 
 function validate_required_input {
-	key=$1
-	value=$2
-	if [ -z "${value}" ] ; then
-		echo_fail "[!] Missing required input: ${key}"
-	fi
+    key=$1
+    value=$2
+    if [ -z "${value}" ] ; then
+        echo_fail "Missing required input: ${key}"
+    fi
+}
+
+function escape {
+    token=$1
+    quoted=$(echo "${token}" | sed -e 's/\"/\\"/g' )
+    echo "${quoted}"
 }
 
 function validate_required_input_with_options {
-	key=$1
-	value=$2
-	values=$3
+    key=$1
+    value=$2
+    options=$3
 
-	validate_required_input "${key}" "${value}"
+    validate_required_input "${key}" "${value}"
 
-	found="0"
-	for v in "${values[@]}" ; do
-		if [ "${v}" == "${value}" ] ; then
-			found="1"
-		fi
-	done
+    found="0"
+    for option in "${options[@]}" ; do
+        if [ "${option}" == "${value}" ] ; then
+            found="1"
+        fi
+    done
 
-	if [ "${found}" == "0" ] ; then
-		echo_fail "Invalid input: (${key}) value: (${value}), valid values: ($( IFS=$", "; echo "${values[*]}" ))"
-	fi
+    if [ "${found}" == "0" ] ; then
+        echo_fail "Invalid input: (${key}) value: (${value}), valid options: ($( IFS=$", "; echo "${options[*]}" ))"
+    fi
 }
 
 #=======================================
 # Main
 #=======================================
 
-#
-# Validate parameters
 echo_info "Configs:"
-echo_details "* platform: $platform"
-echo_details "* entry_file: $entry_file"
-echo_details "* bundle_output: $out"
-echo_details "* dev: $dev"
-echo_details "* assets_dest: $assetRoots"
-echo_details "* options: $options"
-
-echo_info "Deprecated Configs:"
-echo_details "* root: $root"
-echo_details "* url: $url"
-
-echo_info "react-native version:"
-react-native --version
-
-echo
-
-bundle_output="${out}"
-assets_dest="${assetRoots}"
+echo_details "- Platform: $platform"
+echo_details "- EntryFile: $entry_file"
+echo_details "- BundleOutput: $bundle_output"
+echo_details "- SourcemapOutput: $sourcemap_output"
+echo_details "- AssetsDest: $assets_dest"
+echo_details "- Dev: $dev"
 
 values=("ios"  "android")
 validate_required_input_with_options "platform" $platform "${values[@]}"
 validate_required_input "entry_file" $entry_file
 validate_required_input "bundle_output" $bundle_output
+validate_required_input "sourcemap_output" $sourcemap_output
+validate_required_input "assets_dest" $assets_dest
 
-if [ ! -z "${root}" ] ; then
-	echo_warn "root input is deprecated and removed from react-native bundle flags"
-fi
+mkdir -p "$(dirname "${bundle_output}")"
+mkdir -p "$(dirname "${sourcemap_output}")"
+mkdir -p "$(dirname "${assets_dest}")"
 
-if [ ! -z "${url}" ] ; then
-	echo_warn "url input is deprecated and removed from react-native bundle flags"
-fi
+echo_info "react-native CLI version: $(npx react-native --version)"
 
 echo
 
-PLATFORM_OPTION=""
-if [ ! -z "${platform}" ] ; then
-    PLATFORM_OPTION="--platform ${platform}"
-fi
-
-ENTRY_FILE_OPTION=""
-if [ ! -z "${entry_file}" ] ; then
-    ENTRY_FILE_OPTION="--entry-file "${entry_file}""
-fi
-
-BUNDLE_OUTPUT_OPTION=""
-if [ ! -z "${bundle_output}" ] ; then
-    mkdir -p "$(dirname "${bundle_output}")"
-    BUNDLE_OUTPUT_OPTION="--bundle-output ${bundle_output}"
-fi
-
-DEV_OPTION=""
-if [ ! -z "${dev}" ] ; then
-    DEV_OPTION="--dev ${dev}"
-fi
-
-ASSETS_DEST_OPTION=""
-if [ ! -z "${assets_dest}" ] ; then
-    ASSETS_DEST_OPTION="--assets-dest ${assets_dest}"
-fi
-
-# Bundle
-
 set -x
 
-react-native bundle $ENTRY_FILE_OPTION \
-    $PLATFORM_OPTION \
-    $BUNDLE_OUTPUT_OPTION \
-		$DEV_OPTION \
-    $ASSETS_DEST_OPTION \
-		$options
+npx react-native bundle \
+  --entry-file ${entry_file} \
+  --platform ${platform} \
+  --dev ${dev} \
+  --reset-cache \
+  --bundle-output "${bundle_output}" \
+  --sourcemap-output "${sourcemap_output}" \
+  --assets-dest "${assets_dest}"
+
+{ set +x; } 2>/dev/null
+
+if [[ $bundle_output != /* ]]; then
+	bundle_output="$(pwd)/$bundle_output"
+fi
+
+if [[ $sourcemap_output != /* ]]; then
+	sourcemap_output="$(pwd)/$sourcemap_output"
+fi
+
+if [[ $assets_dest != /* ]]; then
+	assets_dest="$(pwd)/$assets_dest"
+fi
+
+envman add --key RN_BUNDLE_FILE_PATH --value "$bundle_output"
+envman add --key RN_BUNDLE_SOURCEMAP_FILE_PATH --value "$sourcemap_output"
+envman add --key RN_BUNDLE_ASSETS_PATH --value "$assets_dest"
+
+echo_info "Output:"
+echo_details "- RN_BUNDLE_FILE_PATH: $bundle_output"
+echo_details "- RN_BUNDLE_SOURCEMAP_FILE_PATH: $sourcemap_output"
+echo_details "- RN_BUNDLE_ASSETS_PATH: $assets_dest"
